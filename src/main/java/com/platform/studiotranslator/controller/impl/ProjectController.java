@@ -60,7 +60,7 @@ public class ProjectController implements ProjectPublicApi, ProjectTranslatorApi
     }
 
     @Override
-//    @PreAuthorize("hasAuthority('ROLE_TRANSLATOR')")
+    @PreAuthorize("hasAuthority('ROLE_TRANSLATOR')")
     public ResponseEntity<Page<ProjectResponse>> getMyProjects(
             @AuthenticationPrincipal UserEntity user,
             @RequestParam(required = false) ProjectStatus status,
