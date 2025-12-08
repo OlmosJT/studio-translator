@@ -7,6 +7,7 @@ import com.platform.studiotranslator.dto.auth.*;
 import com.platform.studiotranslator.dto.common.UserInfo;
 import com.platform.studiotranslator.entity.UserEntity;
 import com.platform.studiotranslator.repository.UserRepository;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -29,12 +30,19 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
 
+
     @Transactional
     public AuthResponse authenticateGoogle(GoogleLoginRequest request) {
         GoogleIdToken.Payload payload = googleVerifier.verify(request.idToken());
+
+        if(!Boolean.TRUE.equals(payload.getEmailVerified())) {
+            throw new IllegalArgumentException("Google account email is not verified.");
+        }
+
         String email = payload.getEmail();
 
         UserEntity user = userRepository.findByEmail(email)
+                .map(existingUser -> updateExistingUserWithGoogleInfo(existingUser, payload))
                 .orElseGet(() -> registerGoogleUser(payload));
 
         return buildAuthResponse(user);
@@ -79,9 +87,13 @@ public class AuthService {
         String pictureUrl = (String) payload.get("picture");
         String fullName = (String) payload.get("name");
 
-        String displayName = fullName.replaceAll("\\s+", "").toLowerCase();
+        String displayName = (fullName != null && fullName.isEmpty() ? fullName : "User")
+                .replaceAll("\\s+", "")
+                .toLowerCase();
 
-        if (userRepository.existsByDisplayName(displayName)) {
+        displayName = displayName.replaceAll("[^a-z0-9]", "");
+
+        while (userRepository.existsByDisplayName(displayName)) {
             displayName = displayName + UUID.randomUUID().toString().substring(0, 4);
         }
 
@@ -108,6 +120,26 @@ public class AuthService {
         }
 
         throw new IllegalArgumentException("Invalid refresh token");
+    }
+
+    private UserEntity updateExistingUserWithGoogleInfo(UserEntity user, GoogleIdToken.Payload payload) {
+        boolean changed = false;
+
+        // Link the Google Subject ID if missing
+        if (user.getGoogleSub() == null) {
+            user.setGoogleSub(payload.getSubject());
+            user.setAuthProvider(AuthProvider.GOOGLE);
+            changed = true;
+        }
+
+        // Import Avatar if the user doesn't have one
+        String pictureUrl = (String) payload.get("picture");
+        if (user.getAvatarUrl() == null && pictureUrl != null) {
+            user.setAvatarUrl(pictureUrl);
+            changed = true;
+        }
+
+        return changed ? userRepository.save(user) : user;
     }
 
     private AuthResponse buildAuthResponse(UserEntity user) {

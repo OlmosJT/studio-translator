@@ -2,8 +2,10 @@ package com.platform.studiotranslator.service.auth;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
+import com.platform.studiotranslator.exception.InvalidGoogleTokenException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,10 +23,10 @@ public class GoogleTokenVerifier {
     @Value("${spring.security.oauth2.client.registration.google.client-id}")
     private String clientId;
 
-    public GoogleIdToken.Payload verify(String idTokenString) throws RuntimeException {
+    public GoogleIdToken.Payload verify(String idTokenString) throws InvalidGoogleTokenException {
         try {
             GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
-                    new NetHttpTransport(), new GsonFactory())
+                    GoogleNetHttpTransport.newTrustedTransport(), new GsonFactory())
                     .setAudience(Collections.singletonList(clientId))
                     .build();
 
@@ -33,7 +35,7 @@ public class GoogleTokenVerifier {
             if (idToken != null) {
                 return idToken.getPayload();
             } else {
-                throw new IllegalArgumentException("Invalid ID token.");
+                throw new InvalidGoogleTokenException("Invalid Google ID token");
             }
         } catch (GeneralSecurityException | IOException e) {
             throw new RuntimeException("Failed to verify Google Token", e);

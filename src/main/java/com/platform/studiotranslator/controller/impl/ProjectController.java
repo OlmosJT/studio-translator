@@ -1,10 +1,13 @@
-package com.platform.studiotranslator.controller;
+package com.platform.studiotranslator.controller.impl;
 
 import com.platform.studiotranslator.constant.ProjectStatus;
+import com.platform.studiotranslator.controller.ProjectPublicApi;
+import com.platform.studiotranslator.controller.ProjectTranslatorApi;
 import com.platform.studiotranslator.dto.project.ProjectRequest;
 import com.platform.studiotranslator.dto.project.ProjectResponse;
 import com.platform.studiotranslator.entity.UserEntity;
 import com.platform.studiotranslator.service.ProjectService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -19,15 +22,16 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/projects")
 @RequiredArgsConstructor
-public class ProjectController {
+public class ProjectController implements ProjectPublicApi, ProjectTranslatorApi {
 
     private final ProjectService projectService;
 
 
-    @PostMapping
-    @PreAuthorize("hasAnyRole('TRANSLATOR', 'ADMIN')")
+    // --- TRANSLATOR API IMPLEMENTATION ---
+
+    @Override
+    @PreAuthorize("hasAnyAuthority('TRANSLATOR', 'ADMIN')")
     public ResponseEntity<ProjectResponse> create(
             @AuthenticationPrincipal UserEntity user,
             @RequestBody @Valid ProjectRequest request
@@ -35,8 +39,8 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.createProject(user, request));
     }
 
-    @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('TRANSLATOR', 'ADMIN')")
+    @Override
+    @PreAuthorize("hasAnyAuthority('TRANSLATOR', 'ADMIN')")
     public ResponseEntity<ProjectResponse> update(
             @PathVariable UUID id,
             @AuthenticationPrincipal UserEntity user,
@@ -45,8 +49,8 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.updateProject(id, user, request));
     }
 
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('TRANSLATOR', 'ADMIN')")
+    @Override
+    @PreAuthorize("hasAnyAuthority('TRANSLATOR', 'ADMIN')")
     public ResponseEntity<Void> delete(
             @PathVariable UUID id,
             @AuthenticationPrincipal UserEntity user
@@ -55,23 +59,28 @@ public class ProjectController {
         return ResponseEntity.noContent().build();
     }
 
-    @GetMapping("/mine")
+    @Override
     @PreAuthorize("hasRole('TRANSLATOR')")
     public ResponseEntity<Page<ProjectResponse>> getMyProjects(
             @AuthenticationPrincipal UserEntity user,
             @RequestParam(required = false) ProjectStatus status,
             @PageableDefault(sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
+        // Log to verify user is injected
+        if (user == null) throw new RuntimeException("User principal is null in /mine endpoint!");
+
         UUID myTranslatorId = user.getTranslatorProfile().getId();
         return ResponseEntity.ok(projectService.filterProjects(status, myTranslatorId, pageable));
     }
 
-    @GetMapping("/{slug}")
+    // --- PUBLIC API IMPLEMENTATION ---
+
+    @Override
     public ResponseEntity<ProjectResponse> getBySlug(@PathVariable String slug) {
         return ResponseEntity.ok(projectService.getProjectBySlug(slug));
     }
 
-    @GetMapping
+    @Override
     public ResponseEntity<Page<ProjectResponse>> getAll(
             @RequestParam(required = false) ProjectStatus status,
             @RequestParam(required = false) UUID translatorId,
@@ -79,5 +88,4 @@ public class ProjectController {
     ) {
         return ResponseEntity.ok(projectService.filterProjects(status, translatorId, pageable));
     }
-
 }

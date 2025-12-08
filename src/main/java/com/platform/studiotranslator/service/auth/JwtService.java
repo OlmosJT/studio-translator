@@ -1,10 +1,12 @@
 package com.platform.studiotranslator.service.auth;
 
+import com.platform.studiotranslator.entity.UserEntity;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
@@ -35,8 +37,21 @@ public class JwtService {
         return claimsResolver.apply(claims);
     }
 
-    public String generateAccessToken(UserDetails userDetails) {
-        return buildToken(new HashMap<>(), userDetails, jwtExpiration);
+    public String generateAccessToken(UserEntity user) {
+        Map<String, Object> claims = new HashMap<>();
+
+        String authority = user.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .findFirst()
+                .orElse("ROLE_READER");
+
+        claims.put("role", authority);
+
+        if (user.getTranslatorProfile() != null && user.getTranslatorProfile().getId() != null) {
+            claims.put("translatorId", user.getTranslatorProfile().getId().toString());
+        }
+
+        return buildToken(claims, user, jwtExpiration);
     }
 
     public String generateRefreshToken(UserDetails userDetails) {

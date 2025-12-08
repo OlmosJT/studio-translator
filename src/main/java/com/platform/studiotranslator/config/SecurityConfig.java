@@ -32,15 +32,12 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Enable CORS for Nuxt
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
-                        // --- Public Endpoints ---
+                        .requestMatchers("/api/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/projects/**").permitAll() // Readers can browse books
-                        .requestMatchers(HttpMethod.GET, "/api/chapters/**").permitAll() // Readers can read chapters
-                        .requestMatchers(HttpMethod.GET, "/api/translators/**").permitAll()
-
-                        // --- Secured Endpoints ---
+                        .requestMatchers("/api/projects/mine").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/projects", "/api/projects/*").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
