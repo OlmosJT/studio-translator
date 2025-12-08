@@ -7,6 +7,7 @@ import com.google.api.services.docs.v1.DocsScopes;
 import com.google.api.services.docs.v1.model.*;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.DriveScopes;
+import com.google.api.services.drive.model.FileList;
 import com.google.api.services.drive.model.Permission;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.GoogleCredentials;
@@ -29,6 +30,9 @@ public class GoogleWorkspaceServiceImpl implements GoogleWorkspaceService {
 
     private static final String APPLICATION_NAME = "StudioTranslator/1.0";
 
+    // The ID of the folder you created in your personal Drive
+    private static final String TARGET_FOLDER_ID = "1BzKp8CHJ7OhcFjU_7ZvFCYFtnl0baOcr";
+
     @Value("${application.google.credentials-path:credentials.json}")
     private String credentialsPath;
 
@@ -43,9 +47,8 @@ public class GoogleWorkspaceServiceImpl implements GoogleWorkspaceService {
                             new ClassPathResource(credentialsPath).getInputStream())
                     .createScoped(List.of(
                             DocsScopes.DOCUMENTS,  // Read/Write Docs
-                            DriveScopes.DRIVE_FILE // Manage files created by this app
+                            DriveScopes.DRIVE // Full Drive access required for file creation
                     ));
-
 
             var requestFactory = new HttpCredentialsAdapter(credentials);
             var jsonFactory = GsonFactory.getDefaultInstance();
@@ -59,18 +62,65 @@ public class GoogleWorkspaceServiceImpl implements GoogleWorkspaceService {
                     .setApplicationName(APPLICATION_NAME)
                     .build();
 
+            // Run cleanup once if your storage is full, then comment it out
+             cleanupStorage();
+
         } catch (IOException | GeneralSecurityException e) {
             throw new RuntimeException("Failed to initialize Google Workspace Services", e);
+        }
+    }
+
+    /**
+     * UTILITY: Deletes ALL files created by this Service Account.
+     * WARNING: Use only for development/cleanup to fix "storageQuotaExceeded".
+     */
+    public void cleanupStorage() {
+        try {
+            log.warn("STARTING STORAGE CLEANUP...");
+            String pageToken = null;
+            do {
+                FileList result = driveService.files().list()
+                        .setQ("'me' in owners and trashed = false")
+                        .setFields("nextPageToken, files(id, name)")
+                        .setPageToken(pageToken)
+                        .execute();
+
+                for (com.google.api.services.drive.model.File file : result.getFiles()) {
+                    try {
+                        driveService.files().delete(file.getId()).execute();
+                        log.info("Deleted file: " + file.getName() + " (" + file.getId() + ")");
+                    } catch (Exception e) {
+                        log.error("Could not delete: " + file.getId());
+                    }
+                }
+                pageToken = result.getNextPageToken();
+            } while (pageToken != null);
+
+            driveService.files().emptyTrash().execute();
+            log.info("STORAGE CLEANUP COMPLETE. Trash emptied.");
+
+        } catch (IOException e) {
+            log.error("Cleanup failed", e);
         }
     }
 
     @Override
     public String createDocument(String title) {
         try {
-            Document doc = new Document().setTitle(title);
-            Document result = docsService.documents().create(doc).execute();
-            log.info("Created Google Doc: {} ({})", title, result.getDocumentId());
-            return result.getDocumentId();
+            // Use Drive API to create the file inside your specific Folder
+            com.google.api.services.drive.model.File fileMetadata = new com.google.api.services.drive.model.File();
+            fileMetadata.setName(title);
+            fileMetadata.setMimeType("application/vnd.google-apps.document");
+            // Set the parent folder
+            fileMetadata.setParents(Collections.singletonList(TARGET_FOLDER_ID));
+
+            com.google.api.services.drive.model.File file = driveService.files().create(fileMetadata)
+                    .setFields("id")
+                    .setSupportsAllDrives(true) // Ensure it works if you move to a Shared Drive later
+                    .execute();
+
+            log.info("Created Google Doc in folder {}: {} ({})", TARGET_FOLDER_ID, title, file.getId());
+            return file.getId();
         } catch (IOException e) {
             throw new RuntimeException("Failed to create Google Doc", e);
         }
@@ -104,10 +154,6 @@ public class GoogleWorkspaceServiceImpl implements GoogleWorkspaceService {
         }
     }
 
-    /**
-     * Helper to turn Google's JSON structure into basic HTML.
-     * Google returns a list of "StructuralElements" (Paragraphs, Tables, etc.)
-     */
     private String convertGoogleDocToHtml(Document doc) {
         StringBuilder html = new StringBuilder();
         List<StructuralElement> elements = doc.getBody().getContent();
@@ -116,7 +162,6 @@ public class GoogleWorkspaceServiceImpl implements GoogleWorkspaceService {
             if (element.getParagraph() != null) {
                 renderParagraph(element.getParagraph(), html);
             } else if (element.getTable() != null) {
-                // For MVP, we might skip tables or render them simply
                 html.append("<p><i>[Table Content - Not Supported Yet]</i></p>");
             }
         }
@@ -127,17 +172,15 @@ public class GoogleWorkspaceServiceImpl implements GoogleWorkspaceService {
         ParagraphStyle style = paragraph.getParagraphStyle();
         String tag = "p";
 
-        // Handle Headings (Heading_1 -> h1)
         if (style != null && style.getNamedStyleType() != null) {
             String type = style.getNamedStyleType();
             if (type.startsWith("HEADING_")) {
-                tag = "h" + type.substring(8); // HEADING_1 -> h1
+                tag = "h" + type.substring(8);
             }
         }
 
         html.append("<").append(tag).append(">");
 
-        // Paragraph contains a list of "elements" (Text Runs)
         for (ParagraphElement element : paragraph.getElements()) {
             if (element.getTextRun() != null) {
                 renderTextRun(element.getTextRun(), html);
@@ -151,16 +194,12 @@ public class GoogleWorkspaceServiceImpl implements GoogleWorkspaceService {
         String content = textRun.getContent();
         TextStyle style = textRun.getTextStyle();
 
-        // Apply formatting
         if (Boolean.TRUE.equals(style.getBold())) html.append("<b>");
         if (Boolean.TRUE.equals(style.getItalic())) html.append("<i>");
         if (Boolean.TRUE.equals(style.getUnderline())) html.append("<u>");
 
-        // Sanitize content (basic)
         content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-
-        // Handle newlines
-        content = content.replace("\n", ""); // Paragraph tag handles the block, remove internal newlines
+        content = content.replace("\n", "");
 
         html.append(content);
 
