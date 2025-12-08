@@ -96,6 +96,10 @@ public class ProjectService {
         project.setCoverImageUrl(request.coverImageUrl());
         project.setOriginalAuthor(request.originalAuthor());
         project.setSourceLink(request.sourceLink());
+        project.setOriginalLanguage(request.originalLanguage());
+        project.setTargetLanguage(request.targetLanguage());
+        project.setType(request.type());
+
         project.setGenres(request.genres());
 
         if (request.status() != null) {
