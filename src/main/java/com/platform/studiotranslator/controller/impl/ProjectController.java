@@ -31,7 +31,7 @@ public class ProjectController implements ProjectPublicApi, ProjectTranslatorApi
     // --- TRANSLATOR API IMPLEMENTATION ---
 
     @Override
-    @PreAuthorize("hasAnyAuthority('TRANSLATOR', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('TRANSLATOR', 'ADMIN')")
     public ResponseEntity<ProjectResponse> create(
             @AuthenticationPrincipal UserEntity user,
             @RequestBody @Valid ProjectRequest request
@@ -40,7 +40,7 @@ public class ProjectController implements ProjectPublicApi, ProjectTranslatorApi
     }
 
     @Override
-    @PreAuthorize("hasAnyAuthority('TRANSLATOR', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('TRANSLATOR', 'ADMIN')")
     public ResponseEntity<ProjectResponse> update(
             @PathVariable UUID id,
             @AuthenticationPrincipal UserEntity user,
@@ -50,7 +50,7 @@ public class ProjectController implements ProjectPublicApi, ProjectTranslatorApi
     }
 
     @Override
-    @PreAuthorize("hasAnyAuthority('TRANSLATOR', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('TRANSLATOR', 'ADMIN')")
     public ResponseEntity<Void> delete(
             @PathVariable UUID id,
             @AuthenticationPrincipal UserEntity user
@@ -60,7 +60,7 @@ public class ProjectController implements ProjectPublicApi, ProjectTranslatorApi
     }
 
     @Override
-    @PreAuthorize("hasRole('TRANSLATOR')")
+//    @PreAuthorize("hasAuthority('ROLE_TRANSLATOR')")
     public ResponseEntity<Page<ProjectResponse>> getMyProjects(
             @AuthenticationPrincipal UserEntity user,
             @RequestParam(required = false) ProjectStatus status,
