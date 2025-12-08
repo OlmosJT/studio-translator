@@ -1,10 +1,6 @@
 package com.platform.studiotranslator.config.filter;
 
-import com.platform.studiotranslator.constant.Role;
-import com.platform.studiotranslator.entity.TranslatorEntity;
-import com.platform.studiotranslator.entity.UserEntity;
 import com.platform.studiotranslator.service.auth.JwtService;
-import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -13,15 +9,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ContentCachingRequestWrapper;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.UUID;
 
@@ -40,34 +37,94 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
-        final String authHeader = request.getHeader("Authorization");
-        final String jwt;
-        final String userEmail;
+        int cacheLimit = 500_000; // 500 KB safe limit
+        ContentCachingRequestWrapper req = new ContentCachingRequestWrapper(request, cacheLimit);
+
+        String requestId = UUID.randomUUID().toString().substring(0, 8);
+
+        logCompactRequest(req, requestId);
+
+        String authHeader = req.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            log.info("Authorization header not found, skipping JWT authentication");
-            filterChain.doFilter(request, response);
+            log.debug("[{}] No JWT token in Authorization header", requestId);
+            filterChain.doFilter(req, response);
             return;
         }
 
-        jwt = authHeader.substring(7);
-        userEmail = jwtService.extractUsername(jwt);
+        try {
+            String jwt = authHeader.substring(7);
+            String email = jwtService.extractUsername(jwt);
 
-        if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
+            log.info("[{}] JWT -> user={}", requestId, email);
 
-            if (jwtService.isTokenValid(jwt, userDetails)) {
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        userDetails.getAuthorities()
-                );
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+            if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                log.info("AUTHENTICATED: {} | Authorities: {}", userEmail, userDetails.getAuthorities());
+                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+
+                if (jwtService.isTokenValid(jwt, userDetails)) {
+                    UsernamePasswordAuthenticationToken auth =
+                            new UsernamePasswordAuthenticationToken(
+                                    userDetails,
+                                    null,
+                                    userDetails.getAuthorities()
+                            );
+
+                    auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(req));
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+
+                    log.info("[{}] Authenticated -> {}", requestId, email);
+                } else {
+                    log.warn("[{}] Invalid JWT for {}", requestId, email);
+                }
+
             }
+
+        } catch (Exception ex) {
+            log.error("[{}] JWT error: {}", requestId, ex.getMessage());
         }
-        filterChain.doFilter(request, response);
+
+        filterChain.doFilter(req, response);
+    }
+
+    /**
+     * Compact request logging block (just enough info).
+     */
+    private void logCompactRequest(ContentCachingRequestWrapper req, String id) {
+
+        String body = "";
+        try {
+            body = new String(req.getContentAsByteArray(), StandardCharsets.UTF_8);
+        } catch (Exception ignored) {}
+
+        if (body.length() > 300) {
+            body = body.substring(0, 300) + "...(truncated)";
+        }
+
+        String headers = Collections.list(req.getHeaderNames()).stream()
+                .map(h -> h + "=" + req.getHeader(h))
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
+
+        if (headers.length() > 300) {
+            headers = headers.substring(0, 300) + "...";
+        }
+
+        log.info("\n" +
+                        "┌────────── JWT FILTER [{}] ───────────┐\n" +
+                        "│ {} {}\n" +
+                        "│ Headers: {}\n" +
+                        "│ Body: {}\n" +
+                        "└──────────────────────────────────────┘",
+                id,
+                req.getMethod(), req.getRequestURI(),
+                headers,
+                (body.isBlank() ? "<empty>" : body)
+        );
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return "OPTIONS".equalsIgnoreCase(request.getMethod());
     }
 }

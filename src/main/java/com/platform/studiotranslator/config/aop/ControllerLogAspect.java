@@ -10,39 +10,98 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Aspect
 @Component
 public class ControllerLogAspect {
-    private static final Logger logger = LoggerFactory.getLogger(ControllerLogAspect.class);
+
+    private static final Logger log = LoggerFactory.getLogger(ControllerLogAspect.class);
 
     @Pointcut("@within(org.springframework.web.bind.annotation.RestController)")
-    public void restControllerMethods() {}
+    public void restControllers() {}
 
-    @Around("restControllerMethods()")
-    public Object logControllerAccess(ProceedingJoinPoint joinPoint) throws Throwable {
-        String methodName = joinPoint.getSignature().getName();
+    @Around("restControllers()")
+    public Object logController(ProceedingJoinPoint joinPoint) throws Throwable {
+
+        // Generate request ID (helps tracking across logs)
+        String requestId = UUID.randomUUID().toString().substring(0, 8);
+
         String className = joinPoint.getTarget().getClass().getSimpleName();
-        Object[] args = joinPoint.getArgs();
+        String methodName = joinPoint.getSignature().getName();
 
-        // 1. Log who is trying to access
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String user = (auth != null) ? auth.getName() : "Anonymous";
-        String roles = (auth != null) ? auth.getAuthorities().toString() : "[NONE]";
+        String roles = (auth != null)
+                ? auth.getAuthorities().stream().map(Object::toString).collect(Collectors.joining(", "))
+                : "NONE";
 
-        logger.info("==> REQUEST: {}.{}() | User: {} | Roles: {}", className, methodName, user, roles);
-        logger.info("--> ARGS: {}", Arrays.toString(args));
+        String args = Stream.of(joinPoint.getArgs())
+                .map(arg -> (arg == null) ? "null" : shorten(arg.toString()))
+                .collect(Collectors.joining(", "));
+
+        // Log request
+        log.info("\n" +
+                        "┌─────────────────────────────────────────┐\n" +
+                        "│  CONTROLLER REQUEST                     │\n" +
+                        "├─────────────────────────────────────────┤\n" +
+                        "│ Request ID : {} \n" +
+                        "│ Handler    : {}.{}() \n" +
+                        "│ User       : {} \n" +
+                        "│ Roles      : {} \n" +
+                        "│ Args       : [{}] \n" +
+                        "└─────────────────────────────────────────┘",
+                requestId, className, methodName, user, roles, args
+        );
 
         long start = System.currentTimeMillis();
+
         try {
             Object result = joinPoint.proceed();
-            long executionTime = System.currentTimeMillis() - start;
-            logger.info("<== RESPONSE: {}.{}() | Time: {}ms", className, methodName, executionTime);
+            long time = System.currentTimeMillis() - start;
+
+            log.info("\n" +
+                            "┌─────────────────────────────────────────┐\n" +
+                            "│  CONTROLLER RESPONSE                    │\n" +
+                            "├─────────────────────────────────────────┤\n" +
+                            "│ Request ID : {} \n" +
+                            "│ Handler    : {}.{}() \n" +
+                            "│ Time       : {} ms \n" +
+                            "│ Result     : {} \n" +
+                            "└─────────────────────────────────────────┘",
+                    requestId, className, methodName, time, shorten(result)
+            );
+
             return result;
-        } catch (Throwable e) {
-            logger.error("X== EXCEPTION in {}.{}(): {}", className, methodName, e.getMessage());
-            throw e;
+
+        } catch (Throwable ex) {
+            long time = System.currentTimeMillis() - start;
+
+            log.error("\n" +
+                            "┌─────────────────────────────────────────┐\n" +
+                            "│  CONTROLLER EXCEPTION                   │\n" +
+                            "├─────────────────────────────────────────┤\n" +
+                            "│ Request ID : {} \n" +
+                            "│ Handler    : {}.{}() \n" +
+                            "│ Time       : {} ms \n" +
+                            "│ Error      : {} \n" +
+                            "└─────────────────────────────────────────┘",
+                    requestId, className, methodName, time, ex.toString()
+            );
+
+            throw ex;
         }
+    }
+
+    /** Prevent logs from exploding. Limit long strings. */
+    private String shorten(Object obj) {
+        if (obj == null) return "null";
+        String s = obj.toString();
+        if (s.length() > 300) { // safe limit
+            return s.substring(0, 300) + "...(truncated)";
+        }
+        return s;
     }
 }

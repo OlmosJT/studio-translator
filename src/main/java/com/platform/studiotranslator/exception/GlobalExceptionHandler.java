@@ -44,7 +44,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ExpiredJwtException.class)
     public ProblemDetail handleExpiredJwt(ExpiredJwtException ex) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
         pd.setTitle("Token Expired");
         pd.setDetail("Token has expired. Please login again.");
         pd.setProperty("errorCode", "JWT_EXPIRED");
@@ -53,7 +53,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(SignatureException.class)
     public ProblemDetail handleInvalidJwt(SignatureException ex) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
         pd.setTitle("Invalid Token Signature");
         pd.setDetail("Invalid token signature.");
         pd.setProperty("errorCode", "JWT_INVALID_SIGNATURE");
