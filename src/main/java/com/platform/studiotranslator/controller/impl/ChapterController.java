@@ -5,6 +5,7 @@ import com.platform.studiotranslator.controller.ChapterPublicApi;
 import com.platform.studiotranslator.controller.ChapterTranslatorApi;
 import com.platform.studiotranslator.dto.chapter.ChapterRequest;
 import com.platform.studiotranslator.dto.chapter.ChapterResponse;
+import com.platform.studiotranslator.dto.chapter.UpdateChapterStatusRequest;
 import com.platform.studiotranslator.entity.UserEntity;
 import com.platform.studiotranslator.service.ChapterService;
 import jakarta.validation.Valid;
@@ -12,11 +13,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
 
+@Validated
 @RestController
 @RequiredArgsConstructor
 public class ChapterController implements ChapterPublicApi, ChapterTranslatorApi {
@@ -44,6 +47,11 @@ public class ChapterController implements ChapterPublicApi, ChapterTranslatorApi
         // 2. Convert to HTML/Text
         // 3. Save to DB and mark as PUBLISHED
         return ResponseEntity.ok(chapterService.syncAndPublish(id, user));
+    }
+
+    @Override
+    public ResponseEntity<ChapterResponse> updateStatus(UUID id, UpdateChapterStatusRequest request, UserEntity user) {
+        return ResponseEntity.ok(chapterService.updateChapterStatus(id, request.status(), user));
     }
 
     // --- PUBLIC API IMPLEMENTATION ---

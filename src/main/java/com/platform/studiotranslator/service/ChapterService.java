@@ -7,12 +7,16 @@ import com.platform.studiotranslator.dto.chapter.ChapterResponse;
 import com.platform.studiotranslator.entity.ChapterEntity;
 import com.platform.studiotranslator.entity.ProjectEntity;
 import com.platform.studiotranslator.entity.UserEntity;
+import com.platform.studiotranslator.mapper.ChapterMapper;
 import com.platform.studiotranslator.repository.ChapterRepository;
 import com.platform.studiotranslator.repository.ProjectRepository;
 import com.platform.studiotranslator.service.googledoc.GoogleWorkspaceService;
+import jakarta.persistence.EntityNotFoundException;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +31,8 @@ public class ChapterService {
     private final ChapterRepository chapterRepository;
     private final ProjectRepository projectRepository;
     private final GoogleWorkspaceService  googleService;
+
+    private final ChapterMapper chapterMapper;
 
     @Transactional
     public ChapterResponse createChapter(UserEntity user, ChapterRequest request) {
@@ -189,5 +195,24 @@ public class ChapterService {
         return chapters.stream()
                 .map(c -> mapToResponse(c, canSeeDrafts))
                 .toList();
+    }
+
+    public ChapterResponse updateChapterStatus(UUID chapterId, @NotNull(message = "Status is required") ChapterStatus newStatus, UserEntity user) {
+        ChapterEntity chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new EntityNotFoundException("Chapter not found"));
+
+        if(!chapter.getProject().getTranslator().getId().equals(user.getId())) {
+            throw new AccessDeniedException("You do not own this chapter");
+        }
+
+        if (newStatus == ChapterStatus.PUBLISHED) {
+            throw new IllegalArgumentException("Use the 'Sync & Publish' endpoint to publish chapters.");
+        }
+
+        chapter.setStatus(newStatus);
+
+        ChapterEntity savedChapter = chapterRepository.save(chapter);
+
+        return chapterMapper.toResponse(savedChapter);
     }
 }
