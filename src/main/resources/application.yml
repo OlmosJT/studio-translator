@@ -32,10 +32,12 @@ spring:
         registration:
           google:
             client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
 
 application:
   google:
     credentials-path: credentials.json
+    refresh-token: ${REFRESH_TOKEN}
   security:
     jwt:
       secret-key: ${JWT_SECRET}

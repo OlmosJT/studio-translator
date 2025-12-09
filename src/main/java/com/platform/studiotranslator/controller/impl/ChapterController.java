@@ -1,6 +1,8 @@
-package com.platform.studiotranslator.controller;
+package com.platform.studiotranslator.controller.impl;
 
 import com.platform.studiotranslator.constant.Role;
+import com.platform.studiotranslator.controller.ChapterPublicApi;
+import com.platform.studiotranslator.controller.ChapterTranslatorApi;
 import com.platform.studiotranslator.dto.chapter.ChapterRequest;
 import com.platform.studiotranslator.dto.chapter.ChapterResponse;
 import com.platform.studiotranslator.entity.UserEntity;
@@ -16,25 +18,23 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/chapters")
 @RequiredArgsConstructor
-public class ChapterController {
+public class ChapterController implements ChapterPublicApi, ChapterTranslatorApi {
 
     private final ChapterService chapterService;
 
-    @PostMapping
+    // --- TRANSLATOR API IMPLEMENTATION ---
+
+    @Override
     @PreAuthorize("hasAnyRole('TRANSLATOR', 'ADMIN')")
     public ResponseEntity<ChapterResponse> create(
             @AuthenticationPrincipal UserEntity user,
             @RequestBody @Valid ChapterRequest request
     ) {
-        // 1. Create Blank Doc in Google Drive
-        // 2. Share it with this User
-        // 3. Return the Google Doc URL
         return ResponseEntity.ok(chapterService.createChapter(user, request));
     }
 
-    @PostMapping("/{id}/sync")
+    @Override
     @PreAuthorize("hasAnyRole('TRANSLATOR', 'ADMIN')")
     public ResponseEntity<ChapterResponse> syncAndPublish(
             @PathVariable UUID id,
@@ -46,13 +46,14 @@ public class ChapterController {
         return ResponseEntity.ok(chapterService.syncAndPublish(id, user));
     }
 
-    @GetMapping("/{id}")
+    // --- PUBLIC API IMPLEMENTATION ---
+
+    @Override
     public ResponseEntity<ChapterResponse> read(@PathVariable UUID id) {
-        // Increments View Count & checks if PUBLISHED
         return ResponseEntity.ok(chapterService.readChapter(id));
     }
 
-    @GetMapping("/project/{slug}")
+    @Override
     public ResponseEntity<List<ChapterResponse>> getTableOfContents(
             @PathVariable String slug,
             @AuthenticationPrincipal UserEntity user
@@ -63,7 +64,7 @@ public class ChapterController {
         // Check if user is logged in
         if (user != null) {
             // OPTIONAL: strict check (only show drafts if they own THIS specific project)
-            // For now, keeping your logic: Admins/Translators can see drafts
+            // For now: Admins/Translators can see drafts
             if (user.getRole() == Role.TRANSLATOR || user.getRole() == Role.ADMIN) {
                 canSeeDrafts = true;
             }
